@@ -4,61 +4,73 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 const PORT = process.env.PORT || 3000;
 
-// SHËNIM: Vendos të dhënat e tua MASTER këtu
 const MASTER_DNS = "http://hkywyphf.mossaptv.com";
 const MASTER_USER = "LMHBTM9T"; 
 const MASTER_PASS = "ZNDWAKAP";
 
-let vUsers = [
-    { user: "admin", pass: "admin123", expire: new Date("2030-01-01") }
-];
+let vUsers = [{ user: "admin", pass: "admin123", expire: new Date("2030-01-01") }];
 
+// 1. DASHBOARD (Shtohet kolona per Proxy)
 app.get('/admin', (req, res) => {
     const host = req.get('host');
     const protocol = req.protocol;
     let rows = vUsers.map(u => {
         const userLink = `${protocol}://${host}/get.php?username=${u.user}&password=${u.pass}`;
-        return `<tr><td style="padding:8px;">${u.user}</td><td>${u.pass}</td><td><button onclick="navigator.clipboard.writeText('${userLink}'); alert('Linku u kopjua!');">Kopjo Linkun</button></td></tr>`;
+        return `<tr><td>${u.user}</td><td><button onclick="navigator.clipboard.writeText('${userLink}')">Kopjo M3U</button></td></tr>`;
     }).join('');
-    res.send(`<body style="background:#121212; color:white; font-family:sans-serif;"><h2>Admin Panel</h2><form method="POST" action="/admin/add"><input name="u" placeholder="User"><input name="p" placeholder="Pass"><input name="d" type="number" placeholder="Dite"><button type="submit">Shto User</button></form><br><table border="1" style="width:100%; border-collapse:collapse;"><tr><th>User</th><th>Pass</th><th>Veprim</th></tr>${rows}</table></body>`);
+    res.send(`<body style="background:#121212;color:white;"><h2>Proxy Stream Panel</h2><form method="POST" action="/admin/add"><input name="u" placeholder="User"><input name="p" placeholder="Pass"><input name="d" type="number"><button>Shto</button></form><table>${rows}</table></body>`);
 });
 
 app.post('/admin/add', (req, res) => {
     const { u, p, d } = req.body;
-    let exp = new Date();
-    exp.setDate(exp.getDate() + parseInt(d));
+    let exp = new Date(); exp.setDate(exp.getDate() + parseInt(d));
     vUsers.push({ user: u, pass: p, expire: exp });
     res.redirect('/admin');
 });
 
-// GET.PHP - VERSIONI I RREGULLUAR
+// 2. GJENERUESI I LISTËS (Rishkruan linket e kanaleve)
 app.get('/get.php', async (req, res) => {
     const { username, password } = req.query;
     const found = vUsers.find(u => u.user === username && u.pass === password);
+    if (!found || found.expire < new Date()) return res.status(403).send("Expired");
 
-    if (found && found.expire > new Date()) {
-        const targetUrl = `${MASTER_DNS}/get.php?username=${MASTER_USER}&password=${MASTER_PASS}&type=m3u_plus&output=ts`;
-        
-        try {
-            const response = await axios.get(targetUrl, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-                },
-                timeout: 15000 // Presim deri ne 15 sekonda
-            });
+    try {
+        const response = await axios.get(`${MASTER_DNS}/get.php?username=${MASTER_USER}&password=${MASTER_PASS}&type=m3u_plus&output=ts`);
+        const host = req.get('host');
+        const protocol = req.protocol;
 
-            res.setHeader('Content-Type', 'application/mpegurl');
-            res.setHeader('Content-Disposition', 'attachment; filename=playlist.m3u');
-            res.send(response.data);
+        // KJO PJESË NDRYSHON LINKET E KANALEVE:
+        // Nga: http://rus.com/live/user/pass/123.ts
+        // Ne: http://railway.app/proxy/test1/test1/123.ts
+        let m3u = response.data.replace(
+            new RegExp(`${MASTER_DNS}/live/${MASTER_USER}/${MASTER_PASS}/(\\d+\\.ts)`, 'g'),
+            `${protocol}://${host}/proxy/${username}/${password}/$1`
+        );
 
-        } catch (error) {
-            console.error("Gabim gjatë marrjes së të dhënave, duke kaluar në Redirect...");
-            // Nëse dështon shkarkimi, e përcjellim direkt te burimi që të mos dështojë linku
-            res.redirect(targetUrl);
-        }
-    } else {
-        res.status(403).send("Llogaria nuk ekziston ose ka skaduar.");
-    }
+        res.setHeader('Content-Type', 'application/mpegurl');
+        res.send(m3u);
+    } catch (e) { res.redirect(`${MASTER_DNS}/get.php?username=${MASTER_USER}&password=${MASTER_PASS}&type=m3u_plus`); }
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`Serveri eshte gati ne porten ${PORT}`));
+// 3. URA E VIDEOS (PROXY STREAM)
+app.get('/proxy/:u/:p/:id', async (req, res) => {
+    const { u, p, id } = req.params;
+    const found = vUsers.find(user => user.user === u && user.pass === p);
+    if (!found) return res.status(403).send();
+
+    const streamUrl = `${MASTER_DNS}/live/${MASTER_USER}/${MASTER_PASS}/${id}`;
+    
+    try {
+        const streamResponse = await axios({
+            method: 'get',
+            url: streamUrl,
+            responseType: 'stream',
+            headers: { 'User-Agent': 'VLC/3.0.12' }
+        });
+
+        res.setHeader('Content-Type', 'video/mp2t');
+        streamResponse.data.pipe(res);
+    } catch (e) { res.status(500).end(); }
+});
+
+app.listen(PORT, '0.0.0.0');
