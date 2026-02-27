@@ -2,85 +2,81 @@ const express = require('express');
 const axios = require('axios');
 const app = express();
 app.use(express.urlencoded({ extended: true }));
-
 const PORT = process.env.PORT || 3000;
 
-// E DHËNAT MASTER (MegaOTT)
-const MASTER_URL = "http://jkekjdiu.mossaptv.com/get.php?username=ULFX541A&password=Q51P2XBU&type=m3u_plus&output=mpegts";
+// BURIMI KRYESOR (Aty ku merret sinjali)
+const MASTER_DNS = "http://jkekjdiu.mossaptv.com";
+const MASTER_USER = "ULFX541A";
+const MASTER_PASS = "Q51P2XBU";
 
-// Lista e përdoruesve që krijon ti (Ruhen në RAM)
-let vUsers = [
-    { user: "klienti1", pass: "pass123", expire: "2026-12-31" },
-    { user: "klienti2", pass: "pass456", expire: "2026-12-31" }
+// DATABASE E THJESHTË (Në një projekt real përdoret MongoDB ose MySQL)
+let clients = [
+    { username: "klienti1", password: "p1", expire: "2026-12-31", status: "Active" }
 ];
 
-// 1. DASHBOARD ADMIN (Për të parë dhe shtuar userat)
+// 1. DASHBOARD PËR TË KRIJUAR USERA TË RINJ
 app.get('/admin', (req, res) => {
-    const host = req.get('host');
-    const protocol = req.protocol;
-    
-    let rows = vUsers.map(u => {
-        const userLink = `${protocol}://${host}/playlist.m3u?u=${u.user}&p=${u.pass}`;
-        return `
-        <tr style="border-bottom:1px solid #444;">
-            <td style="padding:10px;">User: <b>${u.user}</b></td>
-            <td><button onclick="navigator.clipboard.writeText('${userLink}'); alert('U kopjua!')">Kopjo Linkun e Klonuar</button></td>
-        </tr>`;
-    }).join('');
+    let rows = clients.map(c => `
+        <tr>
+            <td>${c.username}</td>
+            <td>${c.status}</td>
+            <td><code>${req.protocol}://${req.get('host')}/get.php?u=${c.username}&p=${c.password}</code></td>
+        </tr>`).join('');
 
     res.send(`
-    <body style="background:#121212; color:white; font-family:sans-serif; padding:20px;">
-        <div style="max-width:600px; margin:auto; background:#1e1e1e; padding:20px; border-radius:10px;">
-            <h2 style="color:#00d1b2;">MegaOTT Cloner Panel</h2>
-            <form method="POST" action="/add-user" style="margin-bottom:20px; display:flex; gap:10px;">
+        <body style="font-family:sans-serif; background:#1a1a1a; color:white; padding:20px;">
+            <h2>Personal IPTV Panel</h2>
+            <form action="/create" method="POST" style="background:#333; padding:15px; border-radius:8px;">
                 <input name="u" placeholder="User i ri" required>
                 <input name="p" placeholder="Pass i ri" required>
-                <button type="submit" style="background:#00d1b2; border:none; padding:5px 15px; cursor:pointer;">Krijo Klon</button>
+                <button type="submit">Gjenero User</button>
             </form>
-            <table style="width:100%; text-align:left;">${rows}</table>
-        </div>
-    </body>`);
+            <table border="1" style="width:100%; margin-top:20px; border-collapse:collapse;">
+                <tr><th>User</th><th>Status</th><th>M3U Link</th></tr>
+                ${rows}
+            </table>
+        </body>`);
 });
 
-app.post('/add-user', (req, res) => {
-    const { u, p } = req.body;
-    vUsers.push({ user: u, pass: p, expire: "2026-12-31" });
+app.post('/create', (req, res) => {
+    clients.push({ username: req.body.u, password: req.body.p, expire: "2026-12-31", status: "Active" });
     res.redirect('/admin');
 });
 
-// 2. GJENERUESI I PLAYLIST-ËS (Klonimi Real)
-app.get('/playlist.m3u', async (req, res) => {
+// 2. LOGJIKA E "KLONIMIT" TË SINJALIT (Get.php)
+app.get('/get.php', async (req, res) => {
     const { u, p } = req.query;
-    
-    // Verifikojmë nëse përdoruesi i klonuar është i saktë
-    const found = vUsers.find(user => user.user === u && user.pass === p);
-    
-    if (!found) {
-        return res.status(403).send("Gabim: Ky përdorues i klonuar nuk ekziston.");
-    }
+    const user = clients.find(c => c.username === u && c.password === p);
+
+    if (!user) return res.status(403).send("Llogari e panjohur");
 
     try {
-        // Marrim listën nga serveri origjinal MegaOTT
-        const response = await axios({
-            method: 'get',
-            url: MASTER_URL,
-            responseType: 'stream', // Streaming për të mos bllokuar RAM-in
-            headers: {
-                'User-Agent': 'VLC/3.0.12 LibVLC/3.0.12'
-            },
-            timeout: 30000
-        });
-
-        // I përcjellim të dhënat te klienti sikur vijnë nga Railway
-        res.setHeader('Content-Type', 'application/mpegurl');
-        res.setHeader('Content-Disposition', 'attachment; filename=megaott_clone.m3u');
+        // I marrim listen MegaOTT-s duke u hequr sikur jemi ne
+        const masterUrl = `${MASTER_DNS}/get.php?username=${MASTER_USER}&password=${MASTER_PASS}&type=m3u_plus&output=mpegts`;
+        const response = await axios.get(masterUrl);
         
-        response.data.pipe(res);
-
+        // Ndryshojmë linjat që të kalojnë nga serveri ynë
+        let playlist = response.data;
+        const myHost = `${req.protocol}://${req.get('host')}`;
+        
+        // Zëvendësojmë DNS e MegaOTT me DNS tonë
+        let modified = playlist.split(`${MASTER_DNS}/live/${MASTER_USER}/${MASTER_PASS}/`).join(`${myHost}/stream/`);
+        
+        res.setHeader('Content-Type', 'application/mpegurl');
+        res.send(modified);
     } catch (e) {
-        console.error("Gabim gjatë klonimit:", e.message);
-        res.status(500).send("Serveri MegaOTT nuk po përgjigjet.");
+        res.status(500).send("Burimi Master nuk po përgjigjet.");
     }
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log("Cloner is running!"));
+// 3. STREAM RELAY (Këtu bëhet transmetimi)
+app.get('/stream/:id', async (req, res) => {
+    const streamUrl = `${MASTER_DNS}/live/${MASTER_USER}/${MASTER_PASS}/${req.params.id}`;
+    try {
+        const stream = await axios({ method: 'get', url: streamUrl, responseType: 'stream' });
+        res.setHeader('Content-Type', 'video/mp2t');
+        stream.data.pipe(res);
+    } catch (e) { res.status(404).end(); }
+});
+
+app.listen(PORT);
