@@ -5,9 +5,9 @@ app.use(express.urlencoded({ extended: true }));
 const PORT = process.env.PORT || 3000;
 
 // SHËNIM: Vendos të dhënat e tua MASTER këtu
-const MASTER_DNS = "http://line.trxdnscloud.ru";
-const MASTER_USER = "USERI_YT_REAL"; 
-const MASTER_PASS = "PASS_YT_REAL";
+const MASTER_DNS = "http://hkywyphf.mossaptv.com";
+const MASTER_USER = "LMHBTM9T"; 
+const MASTER_PASS = "ZNDWAKAP";
 
 let vUsers = [
     { user: "admin", pass: "admin123", expire: new Date("2030-01-01") }
@@ -31,35 +31,30 @@ app.post('/admin/add', (req, res) => {
     res.redirect('/admin');
 });
 
-// GET.PHP - VERSIONI QË "MASHTRON" APLIKACIONET
+// GET.PHP - VERSIONI I RREGULLUAR
 app.get('/get.php', async (req, res) => {
     const { username, password } = req.query;
     const found = vUsers.find(u => u.user === username && u.pass === password);
 
     if (found && found.expire > new Date()) {
+        const targetUrl = `${MASTER_DNS}/get.php?username=${MASTER_USER}&password=${MASTER_PASS}&type=m3u_plus&output=ts`;
+        
         try {
-            // Marrim listën nga serveri rus
-            const response = await axios.get(`${MASTER_DNS}/get.php`, {
-                params: {
-                    username: MASTER_USER,
-                    password: MASTER_PASS,
-                    type: 'm3u_plus',
-                    output: 'ts'
+            const response = await axios.get(targetUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
                 },
-                timeout: 10000 // Presim deri ne 10 sekonda
+                timeout: 15000 // Presim deri ne 15 sekonda
             });
 
-            // KJO ËSHTË PJESA KRITIKE:
-            // I themi aplikacionit që kjo është listë IPTV
             res.setHeader('Content-Type', 'application/mpegurl');
             res.setHeader('Content-Disposition', 'attachment; filename=playlist.m3u');
-            
-            // Dërgojmë të dhënat
             res.send(response.data);
 
         } catch (error) {
-            console.error("Gabim gjatë marrjes së të dhënave:", error.message);
-            res.status(500).send("Gabim: Serveri burim nuk po përgjigjet.");
+            console.error("Gabim gjatë marrjes së të dhënave, duke kaluar në Redirect...");
+            // Nëse dështon shkarkimi, e përcjellim direkt te burimi që të mos dështojë linku
+            res.redirect(targetUrl);
         }
     } else {
         res.status(403).send("Llogaria nuk ekziston ose ka skaduar.");
