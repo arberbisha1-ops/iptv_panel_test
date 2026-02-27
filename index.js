@@ -3,44 +3,69 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 const PORT = process.env.PORT || 3000;
 
-// E RËNDËSISHME: Llogaria jote MASTER që do "shpërndahet"
+// SHËNIM: Vendos këtu të dhënat e tua reale Master
 const MASTER_DNS = "http://line.trxdnscloud.ru";
 const MASTER_USER = "USERI_YT_REAL"; 
 const MASTER_PASS = "PASS_YT_REAL";
 
-// Databaza fiktive (në memorje)
 let vUsers = [
     { user: "admin", pass: "admin123", expire: new Date("2030-01-01") }
 ];
 
-// 1. DASHBOARD PËR TY (ADMIN)
 app.get('/admin', (req, res) => {
-    let rows = vUsers.map(u => `
+    // Marrim emrin e domain-it aktual (p.sh. projekti.up.railway.app)
+    const host = req.get('host');
+    const protocol = req.protocol;
+
+    let rows = vUsers.map(u => {
+        const userLink = `${protocol}://${host}/get.php?username=${u.user}&password=${u.pass}`;
+        return `
         <tr>
             <td>${u.user}</td>
             <td>${u.pass}</td>
             <td>${u.expire.toLocaleDateString()}</td>
             <td>${u.expire > new Date() ? '✅ Aktiv' : '❌ Skaduar'}</td>
-        </tr>`).join('');
+            <td>
+                <input type="text" value="${userLink}" id="input-${u.user}" style="width:10px; opacity:0;">
+                <button onclick="copyToClipboard('input-${u.user}')" style="cursor:pointer; background:#4db8ff; border:none; border-radius:3px; padding:5px 10px;">Kopjo Linkun</button>
+            </td>
+        </tr>`;
+    }).join('');
 
     res.send(`
         <body style="font-family:sans-serif; background:#121212; color:white; padding:20px;">
-            <h2>Shto Përdorues Virtualë (Pa Kredi)</h2>
-            <form method="POST" action="/admin/add" style="background:#1e1e1e; padding:15px; border-radius:8px;">
+            <h2>Menaxhimi i Përdoruesve Virtualë</h2>
+            <form method="POST" action="/admin/add" style="background:#1e1e1e; padding:15px; border-radius:8px; margin-bottom:20px;">
                 <input name="u" placeholder="User" required>
                 <input name="p" placeholder="Pass" required>
-                <input name="d" type="number" placeholder="Ditë" required>
-                <button type="submit">Krijo User</button>
+                <input name="d" type="number" placeholder="Ditë (Kohëzgjatja)" required>
+                <button type="submit" style="background:#e94560; color:white; border:none; padding:5px 15px; cursor:pointer;">Shto User të Ri</button>
             </form>
-            <table border="1" style="width:100%; margin-top:20px; border-collapse:collapse;">
-                <tr><th>User</th><th>Pass</th><th>Skadimi</th><th>Statusi</th></tr>
+            
+            <table border="1" style="width:100%; border-collapse:collapse; text-align:left;">
+                <tr style="background:#333;">
+                    <th style="padding:10px;">User</th>
+                    <th>Pass</th>
+                    <th>Skadimi</th>
+                    <th>Statusi</th>
+                    <th>Veprimi</th>
+                </tr>
                 ${rows}
             </table>
+
+            <script>
+                function copyToClipboard(id) {
+                    var copyText = document.getElementById(id);
+                    copyText.select();
+                    copyText.setSelectionRange(0, 99999);
+                    navigator.clipboard.writeText(copyText.value);
+                    alert("Linku u kopjua: " + copyText.value);
+                }
+            </script>
         </body>
     `);
 });
 
-// 2. LOGJIKA E SHTIMIT TË USERAVE
 app.post('/admin/add', (req, res) => {
     const { u, p, d } = req.body;
     let exp = new Date();
@@ -49,19 +74,16 @@ app.post('/admin/add', (req, res) => {
     res.redirect('/admin');
 });
 
-// 3. LINKU QË DO PËRDORIN KLIENTËT
-// Linku: https://projekti.railway.app/get.php?username=USER&password=PASS
 app.get('/get.php', (req, res) => {
     const { username, password } = req.query;
-    const found = vUsers.find(u => u.user === username && u.password === password);
+    const found = vUsers.find(u => u.user === username && u.pass === password);
 
     if (found && found.expire > new Date()) {
-        // REDIRECT TEK BURIMI REAL
         const finalUrl = `${MASTER_DNS}/get.php?username=${MASTER_USER}&password=${MASTER_PASS}&type=m3u_plus&output=ts`;
         res.redirect(finalUrl);
     } else {
-        res.status(403).send("Llogaria nuk ekziston ose ka skaduar!");
+        res.status(403).send("Llogaria nuk ekziston, gabim ose ka skaduar!");
     }
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`Admin Panel në portën ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`Admin Panel Live` trial));
